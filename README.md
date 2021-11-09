@@ -1,4 +1,4 @@
-# Compologicircuits.jl: **C**ompositional **L**ogic **C**ircuits
+# Compologicircuits.jl: 🔀 **C**ompositional **L**ogic **C**ircuits
 
 ## What is Compologicircuits.jl?
 Compologicircuits.jl implements Logic Circuits using [Catlab](https://github.com/AlgebraicJulia/Catlab.jl). The project name "CompoLogiCircuits.jl” may be subject to change. The theory behind this project is covered in the Spivak's Seven Sketches in Compositionality under chapters 4.4 (SMCs), 2.1/4.\[1-9\] (String Diagrams), and 6.5 (Operads).
