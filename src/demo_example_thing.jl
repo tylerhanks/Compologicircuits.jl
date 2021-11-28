@@ -134,7 +134,12 @@ function to_bool_func(circ::Catlab.Theories.FreeCartesianCategory.Hom)::Function
     elseif head(circ) == :id
     copies = length(args(argvec[1]))
         function g_id(x)
-            return fill(copies, x)
+            if length(x) == copies
+                return x
+            else
+                lenx = length(x)
+                error("domain $copies not $lenx !")
+            end
         end
         return g_id
     
