@@ -96,7 +96,39 @@ function circ_input(circ::Catlab.Theories.FreeCartesianCategory.Hom)::Int
     return input
 end
 
+#function that returns the number of output wires for circuits
+function circ_output(circ::Catlab.Theories.FreeCartesianCategory.Hom)::Int
+    
+    output = 0
+    argvec = args(circ)
+    len = length(argvec)
+    
+    if head(circ) == :compose
+        output = circ_output(argvec[len])
+        
+    elseif head(circ) == :otimes
+            for arg in argvec
+                output += circ_output(arg)
+            end
+            
+    elseif head(circ) == :mcopy
+        output = 2*length(args(argvec[1]))
+        
+    elseif head(circ) == :braid
+        output = length(args(argvec[1])) + length(args(argvec[2]))
+    
+    elseif head(circ) == :id
+        output = length(args(argvec[1]))
+        
+    elseif head(circ) == :generator
+        output = 1
+    end
+    
+    return output
+end
+
 #function that turns circuits to their boolean(vector) functions
+#careful! function returned from to_bool_func don't check for domains!
 function to_bool_func(circ::Catlab.Theories.FreeCartesianCategory.Hom)::Function
     
     argvec = args(circ)
@@ -144,10 +176,41 @@ function to_bool_func(circ::Catlab.Theories.FreeCartesianCategory.Hom)::Function
         return g_id
     
     elseif head(circ) == :generator
-        return gate_to_bool_func(circ)        
-    end
+        return gate_to_bool_func(circ) 
+    end    
 end
 
+struct Bool_Circuit
+    bool_circ::Catlab.Theories.FreeCartesianCategory.Hom
+    bool_func::Function
+    bool_dom::Int
+    bool_cod::Int
+    bool_diag
+end
+
+function Bool_Circuit(x::Catlab.Theories.FreeCartesianCategory.Hom)::Bool_Circuit
+    return Bool_Circuit(x, to_bool_func(x), circ_input(x), circ_output(x), to_diagram(x))
+end
+
+#brute force SAT algorithm, loops over all the possible inputs
+function brute_SAT(f::Bool_Circuit)
+    sat = false
+    i = 0
+    dom = f.bool_dom
+    arr = Bool[]
+
+    if !(f.bool_cod == 1)
+        error("circuit codomain needs to be 1!")
+    else
+        while (!sat)&&(i < 2^dom)
+                arr = iszero.(digits(i, base=2, pad=dom))
+                sat = f.bool_func(arr)[1]                
+                i += 1
+        end
+        return (sat, arr)
+    end
+end
+  
 #TRYME
 #demo = (Dup⊗Dup)⋅(NOT⊗σ(B,B)⊗NOT)⋅(AND⊗AND)
 #demo_diagram = to_diagram(demo)
@@ -157,3 +220,22 @@ end
 #demo_func([true, false])
 #demo_func([false, true])
 #demo_func([false, false])
+#demo1 = demo⋅NOR
+#demo2 = (Dup⊗Dup)⋅(demo⊗demo)⋅(AND⊗AND)
+#demo3 = demo2⋅demo1
+#demo_ult = (demo3 ⊗ demo3) ⋅ demo3
+#demo_ult_circ = Bool_Circuit(demo_ult)
+#draw(demo_ult_circ.bool_diag)
+#brute_SAT(demo_ult_circ)
+#unsatisfiable circuit
+#demo_unsat = Dup ⋅ (NOT⊗id(B)) ⋅ NOR
+#demo_unsat_circ = Bool_Circuit(demo_unsat)
+#draw(demo_unsat_circ.bool_diag)
+#brute_SAT(demo_unsat_circ)
+#demo_unsat2 = demo_unsat ⋅ demo_unsat ⋅ demo_unsat
+#demo_unsat2_circ = Bool_Circuit(demo_unsat2)
+#brute_SAT(demo_unsat2_circ)
+#demo_unsat_ult = (demo_unsat2⊗demo_unsat2⊗demo_unsat2⊗demo_unsat2)⋅(AND⊗NOR)⋅demo1 
+#demo_unsat_ult_circ = Bool_Circuit(demo_unsat_ult)
+#draw(demo_unsat_ult_circ.bool_diag)
+#brute_SAT(demo_unsat_ult_circ)
