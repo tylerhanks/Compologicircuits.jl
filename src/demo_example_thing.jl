@@ -139,10 +139,8 @@ function to_bool_func(circ::Catlab.Theories.FreeCartesianCategory.Hom)::Function
         return g_id
     
     elseif head(circ) == :generator
-        return gate_to_bool_func(circ)
-        
+        return gate_to_bool_func(circ)        
     end
-    
 end
 
 #TRYME
