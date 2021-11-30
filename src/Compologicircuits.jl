@@ -8,6 +8,7 @@ using Catlab.Present
 using Catlab.Programs
 using Catlab.Graphics
 import Catlab.Graphics: Graphviz
+import Catlab.Theories: dom, codom, id, compose, otimes, braid, munit, ⊗, ⋅, σ
 
 #helper function to show graphviz diagrams
 show_diagram(d::WiringDiagram) = to_graphviz(d,
@@ -36,14 +37,45 @@ end
 
 OR = (NOT ⊗ NOT) ⋅ NAND 
 
+#=struct BoolSpace
+    n::Int
+end=#
+
 struct CircuitDom
-    val::Bool
+    n::Int
 end
 
 struct Circuit
-    impl::Function
+    dom::CircuitDom
+    codom::CircuitDom
+    impl::Function #dom -> codom
 end
 
+@instance SymmetricMonoidalCategory{CircuitDom, Circuit} begin
+    id(A::CircuitDom) = Circuit(A,A, x->x)
+    dom(f::Circuit) = f.dom
+    codom(f::Circuit) = f.codom
+
+    compose(f::Circuit, g::Circuit) = begin
+        @assert(f.codom == g.dom)
+        return Circuit(f.dom, g.codom, x->g.impl(f.impl(x)))
+    end
+
+    otimes(A::CircuitDom, B::CircuitDom) = CircuitDom(A.n + B.n)
+    otimes(f::Circuit, g::Circuit) = begin
+        impl = x -> vcat(f.impl(x[1:f.dom.n]), g.impl(x[f.dom.n + 1:end]))
+        return Circuit(CircuitDom(f.dom.n + g.dom.n), CircuitDom(f.codom.n + g.codom.n), impl)
+    end
+
+    braid(A::CircuitDom, B::CircuitDom) = begin
+        impl = x -> vcat(x[A.n+1:end], x[1:A.n])
+        n = A.n + B.n
+        Circuit(CircuitDom(n), CircuitDom(n), impl)
+    end
+
+    munit(::Type{CircuitDom}) = CircuitDom(0)
+
+end
 
 
 #=OR = @program Circuits (a::B, b::B) begin
