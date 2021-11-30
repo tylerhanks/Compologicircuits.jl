@@ -1,4 +1,4 @@
-module Compologicircuits
+#module Compologicircuits
 
 using Catlab.WiringDiagrams
 using Catlab.CategoricalAlgebra
@@ -51,6 +51,8 @@ struct Circuit
     impl::Function #dom -> codom
 end
 
+apply(circuit, input) = circuit.impl(input)
+
 @instance SymmetricMonoidalCategory{CircuitDom, Circuit} begin
     id(A::CircuitDom) = Circuit(A,A, x->x)
     dom(f::Circuit) = f.dom
@@ -77,13 +79,12 @@ end
 
 end
 
+NOT = Circuit(CircuitDom(1), CircuitDom(1), x->map(b->!b, x))
 
-#=OR = @program Circuits (a::B, b::B) begin
-
-end=#
+AND = Circuit(CircuitDom(2), CircuitDom(1), x->[x[1] && x[2]])
 
 
 
 greet() = println("Hello!")
 
-end
+#end
