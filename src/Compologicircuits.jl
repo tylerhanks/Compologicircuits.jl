@@ -9,7 +9,7 @@ using Catlab.Present
 using Catlab.Programs
 using Catlab.Graphics
 import Catlab.Graphics: Graphviz
-import Catlab.Theories: dom, codom, id, compose, otimes, braid, munit, ⊗, ⋅, σ
+import Catlab.Theories: dom, codom, id, compose, otimes, braid, munit, mcopy, delete, pair, proj1, proj2, ⊗, ⋅, σ
 
 # Helper function to show graphviz diagrams
 show_diagram(d::WiringDiagram) = to_graphviz(d,
@@ -28,14 +28,13 @@ B = Ob(FreeCartesianCategory, :B)
 NOT = Hom(:NOT, B, B)
 AND = Hom(:AND, B⊗B, B)
 OR = Hom(:OR, B⊗B, B)
-δ = Hom(:δ, B, B⊗B)
 
-@present Circuits(FreeSymmetricMonoidalCategory) begin
+@present Circuits(FreeCartesianCategory) begin
     B::Ob
     NOT::Hom(B,B)
     AND::Hom(B⊗B,B)
     OR::Hom(B⊗B,B)
-    δ::Hom(B,B⊗B)
+    XOR::Hom(B⊗B,B)
 end
 
 # The skeleton of n-dimensional bool spaces which are the input/output types of logic circuits
@@ -66,7 +65,7 @@ iOR = Circuit(2, 1, x->[x[1] || x[2]])
 iδ = Circuit(1, 2, x->[x[1], x[1]])
 
 # Make circuits compositional by implementing them as an SMC instance
-@instance SymmetricMonoidalCategory{CircuitDom, Circuit} begin
+@instance CartesianCategory{CircuitDom, Circuit} begin
     id(A::CircuitDom) = Circuit(A,A, x->x)
     dom(f::Circuit) = f.dom
     codom(f::Circuit) = f.codom
@@ -93,21 +92,38 @@ iδ = Circuit(1, 2, x->[x[1], x[1]])
 
     # Monoidal unit is a 0-dimensional bool space (i.e. a point or empty list)
     munit(::Type{CircuitDom}) = CircuitDom(0)
+
+    # Stuff for Cartesian Category
+    mcopy(A::CircuitDom) = Circuit(A.n, A.n+A.n, x->vcat(x,x))
+    delete(A::CircuitDom) = Circuit(A.n, 0, x->Bool[])
+
+    pair(f::Circuit, g::Circuit) = begin
+        @assert(f.dom == g.dom)
+        return Circuit(f.dom.n, f.codom.n+g.codom.n, x->vcat(f.impl(x), g.impl(x)))
+    end
+    proj1(A::CircuitDom, B::CircuitDom) = Circuit(A.n+B.n, A.n, x->x[1:A.n])
+    proj2(A::CircuitDom, B::CircuitDom) = Circuit(A.n+B.n, B.n, x->x[A.n+1:end])
 end
 
 # Functor from circuit diagrams to circuit implementations
-gens = Dict(B=>CircuitDom(1), NOT=>iNOT, AND=>iAND, OR=>iOR, δ=>iδ)
+gens = Dict(B=>CircuitDom(1), NOT=>iNOT, AND=>iAND, OR=>iOR)
 Impl(expr) = functor((CircuitDom, Circuit), expr, generators=gens)
 
 # Make some circuits
-XOR = @program Circuits (x::B, y::B) begin
+#=XOR = @program Circuits (x::B, y::B) begin
     x1, x2 = δ(x)
     y1, y2 = δ(y)
     xnandy = NOT(AND(x1,y1))
     xory = OR(x2,y2)
     return AND(xnandy,xory)
+end=#
+
+XOR = @program Circuits (x::B, y::B) begin
+    xnandy = NOT(AND(x,y))
+    xory = OR(x,y)
+    return AND(xnandy,xory)
 end
 
-XOR_expr = to_hom_expr(FreeSymmetricMonoidalCategory, XOR)
+XOR_expr = to_hom_expr(FreeCartesianCategory, XOR)
 
 #end
