@@ -66,7 +66,7 @@ aiNOT = Augmented_Circuit(iNOT, [ [[false],[true]], [[true],[false]]])
 
 aiAND = Augmented_Circuit(iAND, [ [[false, false],[false]], [[false, true],[false]], [[true, false],[false]], [[true, true],[true]]  ])
 
-aiOR = Augmented_Circuit(iOR, [ [[true, true],[true]], [[true, false],[true]], [[false, true],[true]], [[false, false],[false]]  ])
+aiOR = Augmented_Circuit(iOR, [ [[false, false],[false]], [[false, true],[true]], [[true, false],[true]], [[true, true],[true]]  ])
 
 @instance CartesianCategory{CircuitDom, Augmented_Circuit} begin
     id(A::CircuitDom) = Augmented_Circuit(Circuit(A,A, x->x), all_match(n))
