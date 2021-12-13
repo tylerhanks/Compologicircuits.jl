@@ -1,2 +1,5 @@
 [deps]
 Catlab = "134e5e36-593f-5add-ad60-77f754baafbe"
+IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
+MLStyle = "d8e11817-5142-5d16-987a-aa16d5891078"
+PicoSAT = "ff2beb65-d7cd-5ff1-a187-74671133a339"

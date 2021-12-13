@@ -1,4 +1,4 @@
-using ..Compologicircuits
+include("Circuits.jl")
 using Catlab.WiringDiagrams
 using Catlab.CategoricalAlgebra
 using Catlab.Theories
@@ -10,8 +10,9 @@ using Catlab.Graphics
 using Catlab.Graphics.Graphviz
 using Catlab.Programs
 using Catlab.WiringDiagrams
-using ..Compologicircuits: CircuitDom, Circuit, iNOT, iAND, iOR, Impl, Circuits, tfba_expr, show_diagram
-using PicoSAT
+using MLStyle
+#using ..Compologicircuits: CircuitDom, Circuit, iNOT, iAND, iOR, Impl, Circuits, tfba_expr, show_diagram
+#using PicoSAT
 import Catlab.Theories: id, compose, otimes, braid, munit, mcopy, delete, pair, proj1, proj2, ⊗, ⋅, σ
 
 B = Ob(FreeCartesianCategory, :B)
@@ -90,6 +91,13 @@ function dup_check(expr)::Bool
     
     return output
 end
+
+vibe_check(expr::FreeCartesianCategory.Hom)::Bool =
+    @match head(expr) begin
+        :mcopy => true
+        :compose || :otimes => any(map(vibe_check, args(expr)))
+        _ => false
+    end
 
 #replacing all instances of i and j in v with r, ignoring but keeping their signs
 function copy_replace(v::Vector, i::Int, j::Int, r::Int)
@@ -172,7 +180,7 @@ function splate(v::Vector, old::Int, new::Int)
     end
 end
 
-apply the expression expr to the current cnf
+#apply the expression expr to the current cnf
 #only works for expressions with no nested otimes, every exression is expressible without nested otimes
 function app_expr(expr, vars::Vector, cnf::Vector, begn::Int, ed::Int)
     #assuming that if head(expr) == :otimes then no argument of expr has :otimes head
@@ -266,8 +274,8 @@ function expr_to_cnf(expr)
     return app_expr(normal_form(expr), [1], [[1]], 1, 0)
 end
 
-#=demo1 = (dup⊗dup)⋅(not⊗σ(B,B)⊗not)⋅(and⊗and)⋅and
-demo_cnf = expr_to_cnf(demo1)[2]
+demo1 = (dup⊗dup)⋅(not⊗σ(B,B)⊗not)⋅(and⊗and)⋅and
+#=demo_cnf = expr_to_cnf(demo1)[2]
 
 PicoSAT.solve(demo_cnf)
 time brute_SAT(demo1)=#
