@@ -7,6 +7,12 @@ using Catlab.GAT
 using Catlab.Present
 using Catlab.Programs
 using Catlab.Graphics
+using Catlab.Graphics.Graphviz
+using Catlab.Programs
+using Catlab.WiringDiagrams
+using ..Compologicircuits: CircuitDom, Circuit, iNOT, iAND, iOR, Impl, Circuits, tfba_expr, show_diagram
+using PicoSAT
+import Catlab.Theories: id, compose, otimes, braid, munit, mcopy, delete, pair, proj1, proj2, ⊗, ⋅, σ
 
 B = Ob(FreeCartesianCategory, :B)
 dup = mcopy(B)
@@ -19,11 +25,6 @@ not = Hom(:NOT, B,B)
 to_diagram(x) = add_junctions!(to_wiring_diagram(x))
 
 normal_form(x) = to_hom_expr(FreeCartesianCategory, to_diagram(x))
-
-
-normal_form(dup⋅(dup⊗dup))
-expr1 = dup⋅(dup⊗dup)
-head(args(expr1)[1]) == :mcopy
 
 #returns set of all identical pairs of n length bool vectors
 function all_match(n::Int)
@@ -38,10 +39,12 @@ end
 #binary vectors to int
 function bivec_int(w)::Int
     output = 0
-    v = Vector{Int}(w)    
+    v = Vector{Int}(w)
+    
     for i in 0:length(v)-1
         output += (v[i+1])*2^i
-    end   
+    end
+    
     return output
 end
 
@@ -65,9 +68,11 @@ function brute_SAT(f::Circuit)
     end
 end
 
-#Observation: if dup is never used then the circtuit has all possible outputs, hence satisfiable
-#returns true if contains swap, otherwise return false TODO: add a case for swap
-function vibe_check(expr)::Bool
+brute_SAT(expr) = brute_SAT(Impl(expr))
+
+#if dup is never used then the circtuit has all possible outputs, hence satisfiable
+#returns true if contains dup, otherwise return false
+function dup_check(expr)::Bool
     argss = args(expr)
     output = false
     headd = head(expr)
@@ -79,77 +84,190 @@ function vibe_check(expr)::Bool
         output = false
     else
         for i in argss
-            output = output||vibe_check(i)
+            output = output||dup_check(i)
         end
     end
     
     return output
 end
 
-#=examples
-demo1 = (dup⊗dup)⋅(not⊗σ(B,B)⊗not)⋅(and⊗and)⋅and
-demo2 = normal_form(demo1)
-[brute_SAT(Impl(demo1)), brute_SAT(Impl(demo2)), dup_check(demo1), dup_check(demo2)]
-=#
-
-#=
-struct Augmented_Circuit
-    circ::Circuit
-    sol::Vector{Vector{Vector{Bool}}} #array of type Vector{Vector{Vector{Bool}} matching input to output
+#replacing all instances of i and j in v with r, ignoring but keeping their signs
+function copy_replace(v::Vector, i::Int, j::Int, r::Int)
+    count = 1
+    for a in v
+        if (abs(a) == abs(i)) || (abs(a) == abs(j))
+            v[count] = Int((abs(a)/a)*abs(r))
+        end
+        count += 1
+    end
+    return v
 end
 
-aiNOT = Augmented_Circuit(iNOT, [ [[true],[true]], [[false],[false]] ])
-aiAND = Augmented_Circuit(iAND, [ [[true, true],[true]], [[true, false],[false]], [[false, true],[false]], [[false, false],[false]]  ])
-aiOR = Augmented_Circuit(iOR, [ [[true, true],[true]], [[true, false],[true]], [[false, true],[true]], [[false, false],[false]]  ])
-
-#@instance CartesianCategory{CircuitDom, Augmented_Circuit} begin
-    id(A::CircuitDom) = Augmented_Circuit(Circuit(A,A, x->x), all_match(n))
-    dom(f::Augmented_Circuit) = f.circ.dom
-    codom(f::Augmented_Circuit) = f.circ.codom
-
-    # Circuit composition is just function composition
-    compose(f::Augmented_Circuit, g::Augmented_Circuit) = begin
-        @assert(f.circ.codom == f.circ.dom)
-        output = []
-        for i in f.sol
-            push!(output, [i[1], g.sol[bivec_int(i[1])+1][2]])
+#replace all instances of n with m, and m with n, at the same time, ignoring but keeping signs
+function braid_replace(v::Vector, n::Int, m::Int)
+    count = 1
+    for i in v
+        if abs(i) == abs(n)
+            v[count] = Int((abs(i)/i)*abs(m))
+        elseif abs(i) == abs(m)
+            v[count] = Int((abs(i)/i)*abs(n))
         end
-        return Augmented_Circuit(Circuit(f.circ.dom, g.circ.codom, x->g.impl(f.impl(x))), output)
+        count += 1
     end
+    return v
+end
 
-    otimes(A::CircuitDom, B::CircuitDom) = CircuitDom(A.n + B.n)
-    # Monoidal product of circuits runs both circuits (TODO: run them in parallel to improve performance) and concatenates the results
-    otimes(f::Augmented_Circuitt, g::Augmented_Circuit) = begin
-        impl = x -> vcat(f.circ.impl(x[1:f.circ.dom.n]), g.circ.impl(x[f.circ.dom.n + 1:end]))
-        output = []
-        for i in g.sol
-            for j in f.sol
-                push!(output, [vcat(j[1],i[1]), vcat(j[2],i[2])] )
+#replace all instances of n or -n with its negation
+function not_replace(v::Vector, n::Int)
+    count = 1
+    for i in v
+        if abs(i) == abs(n)
+            v[count] = -Int((abs(i)/i)*abs(n))
+        end
+        count += 1
+    end
+    return v
+end
+
+function populate(v::Vector, anc::Int, offs::Int)
+    output = []
+    for i in v
+        if i != anc
+            push!(output, i)
+        else
+            push!(push!(output, i), offs)
+        end
+    end
+    return output
+end
+
+#get rid of all instances of n in v, except the first
+function cleanse(v::Vector, n::Int)
+    output = []
+    found = false
+    for i in v
+        if i != n
+            push!(output, i)
+        elseif !found
+            found = true
+            push!(output, i)
+        end
+    end
+    return output
+end
+
+function splate(v::Vector, old::Int, new::Int)
+    temp =[]
+    for i in v
+        if i != old
+            push!(temp, i)
+        else
+            push!(temp, new)
+        end
+    end
+    if v == temp
+        return [v]
+    else
+        return [v, temp]
+    end
+end
+
+apply the expression expr to the current cnf
+#only works for expressions with no nested otimes, every exression is expressible without nested otimes
+function app_expr(expr, vars::Vector, cnf::Vector, begn::Int, ed::Int)
+    #assuming that if head(expr) == :otimes then no argument of expr has :otimes head
+    #vars = the boolean variables on each wire in order, must all be positive
+    #begn = which wire to begin applying expr in vars
+    #ed = the number of input wires of the previous application, might not always be relevant
+    
+    out_vars = vars #the vars on the wires after applying expr
+    out_cnf = cnf #cnf after applying expr
+    out_begn = begn #which wire to start the next application, should always be 1
+    out_ed = ed #the input wires of expr, might not always be relevant
+    new_var = maximum(vars)+1 #only needed to introduce a new variable for and, or gates
+    heads = head(expr)
+    argss = args(expr)
+    
+    if heads == :compose
+        for i in reverse(argss)
+            (out_vars, out_cnf, out_begn, out_ed) = app_expr(i, out_vars, out_cnf, out_begn, out_ed)
+        end
+    elseif heads == :otimes
+        #@assert begn == 1
+        (out_vars, out_cnf, out_begn, out_ed) = app_expr(argss[1], out_vars, out_cnf, out_begn, out_ed)
+        for i in argss[2:end]
+            v = app_expr(i, out_vars, out_cnf, out_ed+1, out_ed)
+            out_ed += v[4]
+            out_vars = v[1]
+            out_cnf = v[2]
+        end
+    #assume to be Δ(B)
+    elseif heads == :mcopy
+        n = max(vars[begn], vars[begn+1])
+        out_cnf = map(x -> copy_replace(x, vars[begn], vars[begn+1], n), out_cnf)
+        out_vars[begn] = n
+        out_vars = out_vars[1:end .!= begn+1]
+        out_ed = 1
+    #assumed to be σ(B,B)
+    elseif heads == :braid
+        n = vars[begn]
+        m = vars[begn+1]
+        out_vars[begn] = m
+        out_vars[begn+1] = n
+        out_cnf = map(x -> braid_replace(x, n, m), out_cnf)
+        out_ed = 2
+    elseif heads == :id
+        out_ed = Impl(expr).dom.n
+    elseif expr == not
+        var = out_vars[begn]
+        out_ed = 1
+        out_cnf = map(x -> not_replace(x, var), out_cnf)
+    elseif expr == and
+        var = vars[begn]
+        out_vars = vcat(vcat(vars[1:begn], [new_var]), vars[begn+1:end])
+        temp = Vector{Int}[]
+        out_cnf = map(x -> cleanse(x, var), out_cnf)
+        out_cnf = map(x -> cleanse(x, -var), out_cnf)
+        for v in out_cnf
+            if (!(var in v) && !(-var in v))
+                push!(temp, v)
+            else
+                temp_v = populate(v, -var, -new_var)
+                temp_v = splate(temp_v, var, new_var)
+                temp = vcat(temp, temp_v)
             end
         end
-        return (Circuit(f.circ.dom.n + g.circ.dom.n, f.circ.codom.n + g.circ.codom.n, impl), output)
+        out_cnf = temp
+        out_ed = 2   
+    elseif expr == or
+        var = vars[begn]
+        out_vars = vcat(vcat(vars[1:begn], [new_var]), vars[begn+1:end])
+        temp = Vector{Int}[]
+        out_cnf = map(x -> cleanse(x, var), out_cnf)
+        out_cnf = map(x -> cleanse(x, -var), out_cnf)
+        for v in out_cnf
+            if (!(var in v) && !(-var in v))
+                push!(temp, v)
+            else
+                temp_v = populate(v, var, new_var)
+                temp_v = splate(temp_v, -var, -new_var)
+                temp = vcat(temp, temp_v)
+            end
+        end
+        out_cnf = temp
+        out_ed = 2
     end
-
-    # A symmetric braiding just swaps the A and B parts of the input vector
-    braid(A::CircuitDom, B::CircuitDom) = begin
-        impl = x -> vcat(x[A.n+1:end], x[1:A.n])
-        n = A.n + B.n
-        Circuit(n, n, impl)
-    end
-
-    # Monoidal unit is a 0-dimensional bool space (i.e. a point or empty list)
-    munit(::Type{CircuitDom}) = CircuitDom(0)
-
-    # Stuff for Cartesian Category
-    mcopy(A::CircuitDom) = Circuit(A.n, A.n+A.n, x->vcat(x,x))
-    delete(A::CircuitDom) = Circuit(A.n, 0, x->Bool[])
-
-    pair(f::Circuit, g::Circuit) = begin
-        @assert(f.dom == g.dom)
-        return Circuit(f.dom.n, f.codom.n+g.codom.n, x->vcat(f.impl(x), g.impl(x)))
-    end
-    proj1(A::CircuitDom, B::CircuitDom) = Circuit(A.n+B.n, A.n, x->x[1:A.n])
-    proj2(A::CircuitDom, B::CircuitDom) = Circuit(A.n+B.n, B.n, x->x[A.n+1:end])
+    
+    return (out_vars, out_cnf, out_begn, out_ed)  
 end
-=#
 
+function expr_to_cnf(expr)
+    @assert Impl(expr).codom.n == 1 
+    return app_expr(normal_form(expr), [1], [[1]], 1, 0)
+end
+
+#=demo1 = (dup⊗dup)⋅(not⊗σ(B,B)⊗not)⋅(and⊗and)⋅and
+demo_cnf = expr_to_cnf(demo1)[2]
+
+PicoSAT.solve(demo_cnf)
+time brute_SAT(demo1)=#
